@@ -1,0 +1,26 @@
+# Copyright (c) 2023, Nordic Semiconductor
+# SPDX-License-Identifier: Apache-2.0
+
+description: ADS1299 24-bit, 8-Channel, 32kSPS, Analog-to-Digital Converter
+
+compatible: "ti,ads1299"
+
+include: spi-device.yaml
+
+properties:
+  drdy-gpios:
+    type: phandle-array
+    required: false
+    description: INT interrupt pin
+  pwdn-gpios:
+    type: phandle-array
+    required: false
+    description: INT interrupt pin
+  reset-gpios:
+    type: phandle-array
+    required: false
+    description: INT interrupt pin
+  start-gpios:
+    type: phandle-array
+    required: false
+    description: INT interrupt pin

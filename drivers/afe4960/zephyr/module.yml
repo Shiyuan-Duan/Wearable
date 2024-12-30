@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2022 QSIB
+
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig

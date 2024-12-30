@@ -1,0 +1,12 @@
+# Copyright (c) 2019 Nordic Semiconductor
+# SPDX-License-Identifier: Apache-2.0
+
+config MAX30003
+	bool "Enable support for the out of tree MAX30003"
+
+
+config MAX30003_INIT_PRIORITY
+	int "MAX30003 init priority"
+	default 90
+	help
+	  MAX30003 initialization priority.

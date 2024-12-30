@@ -1,0 +1,14 @@
+# Copyright (c) 2023, Nordic Semiconductor
+# SPDX-License-Identifier: Apache-2.0
+
+description: MAX86141 integrated pulse oximeter and heart rate sensor
+
+compatible: "dsy,max86141"
+
+include: spi-device.yaml
+
+properties:
+  int-gpios:
+    type: phandle-array
+    required: false
+    description: INT interrupt pin

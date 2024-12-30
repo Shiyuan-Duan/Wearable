@@ -1,0 +1,6 @@
+if BOARD_NIBOARD
+
+config BT_CTLR
+	default BT
+
+endif # BOARD_NIBOARD

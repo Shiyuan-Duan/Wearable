@@ -1,0 +1,2 @@
+config BOARD_NIBOARD
+	select SOC_NRF52840_QFAA

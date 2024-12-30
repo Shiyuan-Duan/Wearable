@@ -1,0 +1,6 @@
+target_sources(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ble_adv.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/ble_sensor_control.c
+)
+
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

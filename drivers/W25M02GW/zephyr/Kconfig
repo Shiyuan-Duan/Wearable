@@ -1,0 +1,16 @@
+config W25M02GW
+	bool "Enable support for the out of tree MAX30003"
+
+
+config W25M02GW_INIT_PRIORITY
+	int "W25M02GW init priority"
+	default 90
+	help
+	  W25M02GW initialization priority.
+
+config ADS1299_SAMPLE_RATE
+	int "ADS1299 sample rate"
+	default 250
+	help
+	  ADS1299 sample rate.
+

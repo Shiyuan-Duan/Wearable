@@ -1,0 +1,18 @@
+# Copyright (c) 2019 Nordic Semiconductor
+# SPDX-License-Identifier: Apache-2.0
+
+config ADS1299
+	bool "Enable support for the out of tree ADS1299"
+
+
+config ADS1299_INIT_PRIORITY
+	int "ADS1299 init priority"
+	default 90
+	help
+	  ADS1299 initialization priority.
+
+config ADS1299_SAMPLE_RATE
+	int "ADS1299 sample rate"
+	default 250
+	help
+	  ADS1299 sample rate in Hz

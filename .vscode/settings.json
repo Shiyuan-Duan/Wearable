@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "micro_log.h": "c",
+        "device.h": "c",
+        "array": "cpp",
+        "compare": "cpp",
+        "functional": "cpp",
+        "ratio": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp",
+        "ble_sensor_control.h": "c"
+    }
+}

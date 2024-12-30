@@ -1,0 +1,13 @@
+# Copyright (c) 2019 Nordic Semiconductor
+# SPDX-License-Identifier: Apache-2.0
+
+config AFE4960
+	bool "Enable support for the out of tree ADS1299"
+
+
+config AFE4960_INIT_PRIORITY
+	int "AFE4960 init priority"
+	default 90
+	help
+	  AFE4960 initialization priority.
+

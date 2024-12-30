@@ -1,0 +1,6 @@
+target_sources(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ads1299_data_handler.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/max30001_data_handler.c
+)
+
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

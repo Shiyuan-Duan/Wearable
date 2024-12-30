@@ -1,0 +1,18 @@
+# Copyright (c) 2023, Nordic Semiconductor
+# SPDX-License-Identifier: Apache-2.0
+
+description: MAX30001 ECG and R-R interval monitor
+
+compatible: "maxim,max30001"
+
+include: spi-device.yaml
+
+properties:
+  int1-gpios:
+    type: phandle-array
+    required: false
+    description: INT interrupt pin
+  int2-gpios:
+    type: phandle-array
+    required: false
+    description: INT2 interrupt pin
