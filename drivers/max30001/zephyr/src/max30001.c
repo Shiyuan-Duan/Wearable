@@ -392,10 +392,6 @@ static int _enable_ecg(const struct device *dev)
         return err;
     }   
 
-    for(int i = 0; i < 4; i++)
-    {
-        printk("CNFG_MUX register %d: 0x%02x\n", i, cnfg_mux_rx_buf[i]);
-    }
 
 
     return 0;
@@ -496,35 +492,107 @@ static int _config_bioz(const struct device *dev)
         return err;
     }
 
-    
+
     return 0;
 }
-static int _read_efifo(const struct device *dev, uint8_t *data)
+static int _read_efifo(const struct device *dev, uint8_t *data, ssize_t size)
 {
     int err;
-    
+    LOG_INF("Reading ECG FIFO\n");
     const struct max30001_config *cfg = dev->config;
     struct max30001_data *dev_data = dev->data;
-
+    // _read_status(dev, dev_data->status);
+    
     k_sem_take(&dev_data->inta_sem, K_FOREVER);
-    // For now just reset fifo
-    _reset_fifo(dev);
+    // _reset_fifo(dev);
+    uint8_t tx_buf[1];
+    tx_buf[0] = (0x20 << 1) | READ_BIT;
 
+    uint8_t rx_buf[32*3+1];
+
+    struct spi_buf tx_spi_buf = {
+        .buf = (void *)&tx_buf,
+        .len = 1
+    };
+
+    struct spi_buf rx_spi_buf = {
+        .buf = rx_buf,
+        .len = size+1
+    };
+
+    struct spi_buf_set tx_spi = {
+        .buffers = &tx_spi_buf,
+        .count = 1
+    };
+
+    struct spi_buf_set rx_spi = {
+        .buffers = &rx_spi_buf,
+        .count = 1
+    };
+
+
+    err = spi_transceive_dt(&cfg->spi, &tx_spi, &rx_spi);
+
+    if (err < 0)
+    {
+        printk("spi_transceive_dt() failed, err: %d\n", err);
+        return err;
+    }
+
+    // for (int i = 0; i < size+1; i++)
+    // {
+    //     printk("Data read from ECG FIFO: 0x%02x\n", rx_buf[i]);
+    //     k_msleep(10);
+    // }
+    memcpy(data, &rx_buf[1], size);
+    // _reset_fifo(dev);
     return 0;
 }
 
-static int _read_bfifo(const struct device *dev, uint8_t *data)
+static int _read_bfifo(const struct device *dev, uint8_t *data, ssize_t size)
 {
     int err;
     const struct max30001_config *cfg = dev->config;
     struct max30001_data *dev_data = dev->data;
-
+    _read_status(dev, dev_data->status);
+    LOG_INF("Reading BIOZ FIFO\n");
     k_sem_take(&dev_data->intb_sem, K_FOREVER);
-    // For now just reset fifo
-    _reset_fifo(dev);
+
+    uint8_t tx_buf[1];
+    tx_buf[0] = (0x22 << 1) | READ_BIT;
+    uint8_t rx_buf[8*3+1];
+
+    struct spi_buf tx_spi_buf = {
+        .buf = (void *)&tx_buf,
+        .len = 1
+    };
+    struct spi_buf rx_spi_buf = {
+        .buf = rx_buf,
+        .len = size+1
+    };
+    struct spi_buf_set tx_spi = {
+        .buffers = &tx_spi_buf,
+        .count = 1
+    };
+
+    struct spi_buf_set rx_spi = {
+        .buffers = &rx_spi_buf,
+        .count = 1
+    };
+
+    err = spi_transceive_dt(&cfg->spi, &tx_spi, &rx_spi);
+
+    if (err < 0)
+    {
+        printk("spi_transceive_dt() failed, err: %d\n", err);
+        return err;
+    }
+
+    memcpy(data, &rx_buf[1], size);
 
     return 0;
 }
+
 static int _config_interrupts(const struct device *dev)
 {
     int err;
@@ -580,6 +648,29 @@ static int _config_interrupts(const struct device *dev)
     }
 
     // Manage Interrupts
+    uint8_t intb_tx_buf[4];
+    intb_tx_buf[0] = (0x04 << 1) | WRITE_BIT;
+    intb_tx_buf[1] = 0xff;
+    intb_tx_buf[2] = 0x00;
+    intb_tx_buf[3] = 0x04;
+
+    struct spi_buf intb_tx_spi_buf = {
+        .buf = (void *)&intb_tx_buf,
+        .len = 4
+    };
+
+    struct spi_buf_set intb_tx_spi = {
+        .buffers = &intb_tx_spi_buf,
+        .count = 1
+    };
+
+    err = spi_write_dt(&cfg->spi, &intb_tx_spi);
+
+    if (err < 0)
+    {
+        printk("spi_write_dt() failed, err: %d\n", err);
+        return err;
+    }
     // Default ECG FIFO water mark: 16
     // Default BIOZ FIFO water mark: 4
     // Good!

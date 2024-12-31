@@ -36,8 +36,8 @@ typedef int (*max30001_api_read_status)(const struct device *dev, uint8_t *data)
 typedef int (*max30001_api_reset_device)(const struct device *dev);
 typedef int (*max30001_api_resync_device)(const struct device *dev);
 typedef int (*max30001_api_reset_fifo)(const struct device *dev);
-typedef int (*max30001_api_read_efifo)(const struct device *dev, uint8_t *data);
-typedef int (*max30001_api_read_bfifo)(const struct device *dev, uint8_t *data);
+typedef int (*max30001_api_read_efifo)(const struct device *dev, uint8_t *data, ssize_t size);
+typedef int (*max30001_api_read_bfifo)(const struct device *dev, uint8_t *data, ssize_t size);
 
 struct max30001_driver_api_funcs {
     max30001_api_check_id check_id;
@@ -107,29 +107,29 @@ static inline void z_impl_max30001_reset_fifo(const struct device *dev)
 }
 
 
-__syscall void max30001_read_efifo(const struct device *dev, uint8_t *data);
+__syscall void max30001_read_efifo(const struct device *dev, uint8_t *data, ssize_t size);
 
 
-static inline void z_impl_max30001_read_efifo(const struct device *dev, uint8_t *data)
+static inline void z_impl_max30001_read_efifo(const struct device *dev, uint8_t *data, ssize_t size)
 {
     const struct max30001_driver_api_funcs *api = dev->api;
 
     __ASSERT(api->read_efifo, "Callback pointer should not be NULL");
 
-    api->read_efifo(dev, data);
+    api->read_efifo(dev, data, size);
 }
 
 
-__syscall void max30001_read_bfifo(const struct device *dev, uint8_t *data);
+__syscall void max30001_read_bfifo(const struct device *dev, uint8_t *data, ssize_t size);
 
 
-static inline void z_impl_max30001_read_bfifo(const struct device *dev, uint8_t *data)
+static inline void z_impl_max30001_read_bfifo(const struct device *dev, uint8_t *data, ssize_t size)
 {
     const struct max30001_driver_api_funcs *api = dev->api;
 
     __ASSERT(api->read_bfifo, "Callback pointer should not be NULL");
 
-    api->read_bfifo(dev, data);
+    api->read_bfifo(dev, data, size);
 }
 
 #include <syscalls/max30001.h>
