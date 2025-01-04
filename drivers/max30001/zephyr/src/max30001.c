@@ -25,6 +25,10 @@
 #define WRITE_BIT 0x00
 #define READ_BIT 0x01
 
+// Debug Purpose
+static uint32_t ecg_trigger_count = 0;
+static uint32_t bioz_trigger_count = 0;
+
 
 LOG_MODULE_REGISTER(MAX30001, LOG_LEVEL_DBG);
 
@@ -120,22 +124,38 @@ static int _read_status(const struct device *dev, uint8_t *data)
 
 }
 
-static void ecg_fifo_cb(const struct device *port, 
-                        struct gpio_callback *cb, 
+static void ecg_fifo_cb(const struct device *port,
+                        struct gpio_callback *cb,
                         gpio_port_pins_t pins)
 {
     struct max30001_data *data = CONTAINER_OF(cb, struct max30001_data, inta_cb);
+
+    /* Give semaphore to unblock your ECG processing thread */
     k_sem_give(&data->inta_sem);
-    LOG_INF("ECG FIFO callback triggered!");
+
+    /* Increment counter and log with timestamp */
+    ecg_trigger_count++;
+    uint32_t now_ms = k_uptime_get_32();  // Milliseconds since boot
+
+    LOG_INF("ECG FIFO callback triggered! Count=%u, Timestamp=%u ms", 
+            ecg_trigger_count, now_ms);
 }
 
-static void bioz_fifo_cb(const struct device *port, 
-                         struct gpio_callback *cb, 
+static void bioz_fifo_cb(const struct device *port,
+                         struct gpio_callback *cb,
                          gpio_port_pins_t pins)
 {
     struct max30001_data *data = CONTAINER_OF(cb, struct max30001_data, intb_cb);
+
+    /* Give semaphore for BIOZ processing */
     k_sem_give(&data->intb_sem);
-    LOG_INF("BIOZ FIFO callback triggered!");
+
+    /* Increment counter and log with timestamp */
+    bioz_trigger_count++;
+    uint32_t now_ms = k_uptime_get_32();
+
+    LOG_INF("BIOZ FIFO callback triggered! Count=%u, Timestamp=%u ms", 
+            bioz_trigger_count, now_ms);
 }
 
 static int _init_gpios(const struct device *dev)
@@ -290,7 +310,7 @@ static int _config_general(const struct device *dev)
     cnfg_gen_tx_buf[0] = (0x10 << 1) | READ_BIT;
     cnfg_gen_tx_buf[1] = 0x00;
     cnfg_gen_tx_buf[2] = 0x00;
-    cnfg_gen_tx_buf[3] = 0x00;
+    cnfg_gen_tx_buf[3] = 0x13;
 
     struct spi_buf cnfg_gen_tx_spi_buf = {
         .buf = (void *)&cnfg_gen_tx_buf,
@@ -554,7 +574,7 @@ static int _read_bfifo(const struct device *dev, uint8_t *data, ssize_t size)
     int err;
     const struct max30001_config *cfg = dev->config;
     struct max30001_data *dev_data = dev->data;
-    _read_status(dev, dev_data->status);
+    // _read_status(dev, dev_data->status);
     LOG_INF("Reading BIOZ FIFO\n");
     k_sem_take(&dev_data->intb_sem, K_FOREVER);
 

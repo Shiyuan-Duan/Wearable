@@ -453,7 +453,7 @@ static int init_w25m02gw(const struct device *dev)
 
     int err = 0;
 
-
+    init_gpios(dev);
     k_msleep(100);
     _reset_device(dev);
     k_msleep(1); // Small delay to ensure command is processed
