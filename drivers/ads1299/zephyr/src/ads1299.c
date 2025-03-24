@@ -352,6 +352,26 @@ static int config_sample_rate(const struct device *dev)
     return 0;
 }
 
+static int _configure_bias(const struct device *dev)
+{
+    const struct ads1299_config *cfg = dev->config;
+    int err;
+
+    // Set the bias sense positive and negative
+    err = ads1299_write_register(dev, REG_BIAS_SENSP, 0x00);
+    if (err < 0) {
+        LOG_ERR("Error writing register\n");
+        return err;
+    }
+    err = ads1299_write_register(dev, REG_BIAS_SENSN, 0xFF);
+
+    if (err < 0) {
+        LOG_ERR("Error writing register\n");
+        return err;
+    }
+
+    return 0;
+}
 static int init_gpios(const struct device *dev)
 {
     struct ads1299_data *data = dev->data;
@@ -495,10 +515,12 @@ static int init_ads1299(const struct device *dev)
     err = ads1299_read_reg(dev, 0x03, &config3, 1);
     config3 |= BIT(7); // Set BIT7 to enable internal reference
     config3 |= BIT(3); // Use interal bias ref.
+    config3 |= BIT(4); // Set BIT4 to enable bias measurement
+    config3 |= BIT(2); // Set BIT2 to enable bias measurement
     err = ads1299_write_register(dev, 0x03, config3);
     turn_on_electrodes(dev);
 
-
+    _configure_bias(dev);
 
     // Enable SRB1 reference
     uint8_t misc1_reg = 0x15;

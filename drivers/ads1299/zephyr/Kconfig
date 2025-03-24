@@ -13,6 +13,6 @@ config ADS1299_INIT_PRIORITY
 
 config ADS1299_SAMPLE_RATE
 	int "ADS1299 sample rate"
-	default 250
+	default 500
 	help
 	  ADS1299 sample rate in Hz

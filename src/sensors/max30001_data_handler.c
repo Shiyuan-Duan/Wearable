@@ -2,7 +2,10 @@
 #include "max30001_data_handler.h"
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
 #include "w25m02gw.h"
 #include "ble_sensor_control.h"
 #include "max30001.h"
@@ -22,6 +25,9 @@ K_MEM_SLAB_DEFINE(ecg_fifo_data_slab, 8, 128, 4);
 K_MEM_SLAB_DEFINE(bioz_fifo_data_slab, 8, 64, 4);
 K_MEM_SLAB_DEFINE(ble_stream_slab, 40, 250, 4);
 
+struct k_sem ecg_download_sem;
+struct k_sem bioz_download_sem;
+
 
 const struct device *max30001_dev = DEVICE_DT_GET(DT_NODELABEL(max30001));
 const struct device *w25m02gw_dev = DEVICE_DT_GET(DT_NODELABEL(w25m02gw));
@@ -32,6 +38,50 @@ static int32_t flash_buffer[512]; // 2048 / 4
 static uint8_t max30001_download_start;
 static uint8_t max30001_sensor_start;
 
+uint32_t block_to_download = 0;
+
+static int write_pointer_buffer[4];
+#define META_PARTITION	storage_partition
+#define META_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(META_PARTITION)
+#define META_PARTITION_DEVICE	FIXED_PARTITION_DEVICE(META_PARTITION)
+#define FLASH_PAGE_SIZE   4096
+
+const struct device *flash_dev = META_PARTITION_DEVICE;
+
+void save_flash_pointers(void)
+{
+    // flash_erase(flash_dev, META_PARTITION_OFFSET, FLASH_PAGE_SIZE);
+    // write_pointer_buffer[0] = disk_write_block_pointer;
+    // write_pointer_buffer[1] = disk_write_page_pointer;
+    // write_pointer_buffer[2] = disk_write_offset;
+    // write_pointer_buffer[3] = 0;
+    // flash_write(flash_dev, META_PARTITION_OFFSET, write_pointer_buffer, 16);
+}
+
+void read_flash_pointers(void)
+{
+
+    // flash_read(flash_dev, META_PARTITION_OFFSET, write_pointer_buffer, 16);
+    // disk_write_block_pointer = write_pointer_buffer[0];
+    // disk_write_page_pointer = write_pointer_buffer[1];
+    // disk_write_offset = write_pointer_buffer[2];
+}
+
+void stream_buffer(uint8_t *data, int size, int channel)
+{
+    const int max_chunk_size = 128 ;
+
+    // Loop through the buffer and stream in chunks
+    for (int offset = 0; offset < size; offset += max_chunk_size)
+    {
+        // Calculate the size of the current chunk
+        int chunk_size = (size - offset > max_chunk_size) ? max_chunk_size : (size - offset);
+
+        // Stream the current chunk
+        stream_sensor_data(channel, data + offset, chunk_size);
+
+    }
+}
 static int process_raw_ecg_fifo(uint8_t *ecg_buffer, int32_t *ecg_fifo, int size)
 {
     /*
@@ -139,6 +189,8 @@ int reset_flash_pointers(void)
     disk_write_page_pointer = 0;
     disk_write_offset = 0;
 
+    save_flash_pointers();
+
     disk_read_die_pointer = 0;
     disk_read_block_pointer = 0;
     disk_read_page_pointer = 0;
@@ -151,14 +203,42 @@ static int toggle_sensor(uint8_t enable)
 {
     max30001_sensor_start = enable;
     printk("Toggled sensor to %d\n", enable);
+    printk("max30001_sensor_start_value: %d\n", max30001_sensor_start);
     if(enable){
+        uint8_t test_buffer[4] = {enable, 0x02, 0x03, 0x04};
+        stream_sensor_data(DOWNLOAD, test_buffer, 4);
         reset_flash_pointers();
+        max30001_download_start = 0;
     }
     return 0;
 
 }
-static int sensor_read_data_cb(uint8_t *data)
+
+int retrieve_flash(void)
 {
+    disk_write_block_pointer = 1023;
+    disk_write_page_pointer = 63;
+    disk_write_offset = 0;
+}
+static int sensor_data_download_cb(uint8_t sw)
+{
+    printk("Sensor data download sw: %d\n", sw);
+    max30001_download_start = sw;
+    if(sw){
+        disk_read_die_pointer = 0;
+        disk_read_block_pointer = 0;
+        disk_read_page_pointer = 0;
+        disk_read_offset = 0;
+    }
+    return 0;
+}
+
+int sensor_update_download_block_cb(uint32_t block)
+{
+    printk("Block recieved here: %d\n", block);
+    block_to_download = block;
+    k_sem_give(&ecg_download_sem);
+    k_sem_give(&bioz_download_sem);
     return 0;
 }
 size_t read_flashed_data_size(void)
@@ -170,26 +250,35 @@ static int t_ecg_data_producer(void)
     uint8_t ecg_buffer[ECG_FIFO_SIZE];
     int err;
     LOG_INF("Initializing data handler: %d\n", CONFIG_MAX30001);
+    printk("max30001_sensor_start_value: %d\n", max30001_sensor_start);
     while(1)
     {
-        LOG_INF("Data handler running\n");
-        max30001_read_efifo(max30001_dev, ecg_buffer, ECG_FIFO_SIZE);
-        process_raw_ecg_fifo(ecg_buffer, ecg_fifo, ECG_FIFO_SIZE);
+        if(max30001_sensor_start){
+            LOG_INF("Data handler running\n");
+            max30001_read_efifo(max30001_dev, ecg_buffer, ECG_FIFO_SIZE);
+            process_raw_ecg_fifo(ecg_buffer, ecg_fifo, ECG_FIFO_SIZE);
 
-        for (int i = 0; i < ECG_FIFO_COUNT; i++)
-        {
-            struct max30001_ecg_fifo_data_item_t *data_item;
-            printk("Requesting memory\n");
-            err = k_mem_slab_alloc(&ecg_fifo_data_slab, (void **)&data_item, K_FOREVER);
-            printk("Memory allocated\n");
-            memcpy(data_item->data, ecg_buffer[i], sizeof(ecg_buffer[i]));
-            k_fifo_put(&max30001_ecg_data_fifo, data_item);
+            for (int i = 0; i < ECG_FIFO_COUNT; i++)
+            {
+                struct max30001_ecg_fifo_data_item_t *data_item;
+                // printk("Requesting memory\n");
+                err = k_mem_slab_alloc(&ecg_fifo_data_slab, (void **)&data_item, K_FOREVER);
+                // printk("Memory allocated\n");
+                data_item->data = ecg_fifo[i];
+
+                k_fifo_put(&max30001_ecg_data_fifo, data_item);
+
+            }
+            stream_sensor_data(CHANNEL1, ecg_fifo, ECG_FIFO_COUNT*4);
+
+            
+        }else{
+            k_msleep(1);
         }
-        stream_sensor_data(CHANNEL1, ecg_fifo, ECG_FIFO_COUNT*4);
 
         k_yield();
-    }
 
+    }
     return 0;
 }
 static int t_bioz_data_producer(void)
@@ -198,48 +287,53 @@ static int t_bioz_data_producer(void)
     int err;
     while(1)
     {
-        max30001_read_bfifo(max30001_dev, bioz_buffer, BIOZ_FIFO_SIZE);
-        process_raw_bioz_fifo(bioz_buffer, bioz_fifo, BIOZ_FIFO_SIZE);
-        for (int i = 0; i < BIOZ_FIFO_COUNT; i++)
-        {
-            struct max30001_bioz_fifo_data_item_t *data_item;
-            err = k_mem_slab_alloc(&bioz_fifo_data_slab, (void **)&data_item, K_FOREVER);
-            memcpy(data_item->data, bioz_buffer[i], sizeof(bioz_buffer[i]));
-            k_fifo_put(&max30001_bioz_data_fifo, data_item);
-        }
+        if(max30001_sensor_start){
+            uint8_t test_buffer[4] = {0x01, 0x02, 0x03, 0x04};
+            
+            max30001_read_bfifo(max30001_dev, bioz_buffer, BIOZ_FIFO_SIZE);
+            stream_sensor_data(DOWNLOAD, test_buffer, 4);
+            process_raw_bioz_fifo(bioz_buffer, bioz_fifo, BIOZ_FIFO_SIZE);
+            for (int i = 0; i < BIOZ_FIFO_COUNT; i++)
+            {
+                struct max30001_bioz_fifo_data_item_t *data_item;
+                err = k_mem_slab_alloc(&bioz_fifo_data_slab, (void **)&data_item, K_FOREVER);
+                data_item->data = bioz_fifo[i];
+                k_fifo_put(&max30001_bioz_data_fifo, data_item);
+            }
 
-        stream_sensor_data(CHANNEL2, bioz_fifo, BIOZ_FIFO_COUNT*4);
+            stream_sensor_data(CHANNEL2, bioz_fifo, BIOZ_FIFO_COUNT*4);
+            k_msleep(125);
+        }else{
+            k_msleep(1);
+        }
+        
+        k_yield();
+
     }
     return 0;
 
 }
-static int t_data_flasher(void)
+static int t_max30001_ecg_flasher(void)
 {
-    uint8_t ecg_bioz_data_pair_count = 0;
-    printk("Flasher thread running\n");
-    while (1)
-    {
-        for (int i = 0; i < 8; i++)
-        {
-            struct max30001_ecg_fifo_data_item_t *ecg_data_item = k_fifo_get(&max30001_ecg_data_fifo, K_FOREVER);
-            if (ecg_data_item)
-            {
-                memcpy(&flash_buffer[ecg_bioz_data_pair_count * 9 + i], ecg_data_item->data, 4);
-                k_mem_slab_free(&ecg_fifo_data_slab, (void *)ecg_data_item);
-            }
-        }
-        struct max30001_bioz_fifo_data_item_t *bioz_data_item = k_fifo_get(&max30001_bioz_data_fifo, K_FOREVER);
-        if (bioz_data_item)
-        {
-            memcpy(&flash_buffer[ecg_bioz_data_pair_count * 9 + 8], bioz_data_item->data, 4);
-            k_mem_slab_free(&bioz_fifo_data_slab, (void *)bioz_data_item);
-        }
-        ecg_bioz_data_pair_count++;
+    int32_t ecg_data_flasher_fifo[512];
+    int ecg_data_flasher_fifo_index = 0;
 
-        if (ecg_bioz_data_pair_count >= NUM_ECG_BIOZ_DATA_PAIR_PER_PAGE)
+    while(1)
+    {
+        struct max30001_ecg_fifo_data_item_t *ecg_data_item = k_fifo_get(&max30001_ecg_data_fifo, K_FOREVER);
+        if (ecg_data_item)
         {
-            w25m02gw_write(w25m02gw_dev, disk_write_block_pointer, disk_write_page_pointer, flash_buffer, 2048);
-            ecg_bioz_data_pair_count = 0;
+
+            ecg_data_flasher_fifo[ecg_data_flasher_fifo_index] = ecg_data_item->data;
+            k_mem_slab_free(&ecg_fifo_data_slab, (void *)ecg_data_item);
+            ecg_data_flasher_fifo_index++;
+
+        }
+
+        if (ecg_data_flasher_fifo_index >= 512)
+        {
+            w25m02gw_write(w25m02gw_dev, disk_write_block_pointer, disk_write_page_pointer, ecg_data_flasher_fifo, 2048);
+            ecg_data_flasher_fifo_index = 0;
             disk_write_page_pointer++;
             if (disk_write_page_pointer >= FLASH_NUM_PAGES)
             {
@@ -247,7 +341,80 @@ static int t_data_flasher(void)
                 disk_write_block_pointer++;
                 w25m02gw_erase_block(w25m02gw_dev, disk_write_block_pointer);
             }
+
+            save_flash_pointers();
         }
+    }
+}
+
+static int t_max30001_bioz_flasher(void)
+{
+    int32_t bioz_data_flasher_fifo[512];
+    int bioz_data_flasher_fifo_index = 0;
+
+    while(1)
+    {
+        struct max30001_bioz_fifo_data_item_t *bioz_data_item = k_fifo_get(&max30001_bioz_data_fifo, K_FOREVER);
+        if (bioz_data_item)
+        {
+            // memcpy(&bioz_data_flasher_fifo[bioz_data_flasher_fifo_index], bioz_data_item->data, 4);
+            bioz_data_flasher_fifo[bioz_data_flasher_fifo_index] = bioz_data_item->data;
+            k_mem_slab_free(&bioz_fifo_data_slab, (void *)bioz_data_item);
+            bioz_data_flasher_fifo_index++;
+        }
+
+        if (bioz_data_flasher_fifo_index >= 512)
+        {
+            w25m02gw_write(w25m02gw_dev, disk_write_block_pointer, disk_write_page_pointer, bioz_data_flasher_fifo, 2048);
+            bioz_data_flasher_fifo_index = 0;
+            disk_write_page_pointer++;
+            if (disk_write_page_pointer >= FLASH_NUM_PAGES)
+            {
+                disk_write_page_pointer = 0;
+                disk_write_block_pointer++;
+                w25m02gw_erase_block(w25m02gw_dev, disk_write_block_pointer);
+            }
+
+            save_flash_pointers();
+        }
+    }
+}
+
+static int t_download_ecg_thread()
+{
+    uint8_t ecg_buffer[2048];
+    int err;
+    while(1)
+    {
+        k_sem_take(&ecg_download_sem, K_FOREVER);
+        for (int _page = 0 ; _page < 64; _page++)
+        {   
+            printk("Downloading from block: %d, page: %d\n", block_to_download, _page);
+            w25m02gw_read(w25m02gw_dev, block_to_download, _page, 0, ecg_buffer, 2048);
+            printk("First data: %d\n", ecg_buffer[0]);  
+            stream_buffer(ecg_buffer, 2048, DOWNLOAD);
+        }
+        k_yield();
+    }
+    return 0;
+}
+
+static int t_download_bioz_thread()
+{
+    uint8_t bioz_buffer[2048];
+    int err;
+
+    while(1)
+    {
+        k_sem_take(&bioz_download_sem, K_FOREVER);
+        for (int _page = 0 ; _page < 64; _page++)
+        {   
+            printk("Downloading from block: %d, page: %d\n", block_to_download, _page);
+            w25m02gw_read(w25m02gw_dev, block_to_download, _page, 0, bioz_buffer, 2048);
+            printk("First data: %d\n", bioz_buffer[0]);  
+            stream_buffer(bioz_buffer, 2048, DOWNLOAD);
+        }
+        k_yield();
     }
     return 0;
 }
@@ -256,22 +423,39 @@ static int init_max30001_data_handler(void)
 {
     max30001_download_start = 0;
     max30001_sensor_start = 0;
-    
+    k_sem_init(&ecg_download_sem, 0, 1);
+    k_sem_init(&bioz_download_sem, 0, 1);
+    read_flash_pointers();
     k_fifo_init(&max30001_ecg_data_fifo);
     k_fifo_init(&max30001_bioz_data_fifo);
     const struct ble_sensor_ctrl_cb callbacks = {
         .sensor_switch_cb = toggle_sensor,
-        .sensor_read_data_cb = sensor_read_data_cb,
+        // .sensor_read_data_cb = sensor_read_data_cb,
+        .sensor_data_download_cb = sensor_data_download_cb,
+        .sensor_update_download_block_cb = sensor_update_download_block_cb,
         .sensor_read_fifo_size_cb = read_flashed_data_size,
+        .retrieve_flash_cb = retrieve_flash,
     };
     register_ble_cb(&callbacks);
 
 
+
 }
-K_THREAD_DEFINE(max30001_data_init_thread, 2048, init_max30001_data_handler, NULL, NULL, NULL, 1, 0, 0);
-K_THREAD_DEFINE(max30001_ecg_data_producer_thread, 2048, t_ecg_data_producer, NULL, NULL, NULL, 2, 0, 0);
+
+
+K_THREAD_DEFINE(max30001_data_init_thread, 4096, init_max30001_data_handler, NULL, NULL, NULL, 1, 0, 0);
+#if CONFIG_MAX30001_ECG
+K_THREAD_DEFINE(max30001_ecg_data_producer_thread, 4096, t_ecg_data_producer, NULL, NULL, NULL, 2, 0, 0);
+K_THREAD_DEFINE(max30001_ecg_flash_thread, 4096*4, t_max30001_ecg_flasher, NULL, NULL, NULL, 2, 0, 0);
+K_THREAD_DEFINE(max30001_ecg_download_thread, 4096, t_download_ecg_thread, NULL, NULL, NULL, 3, 0, 0);
+#endif
+
+#if CONFIG_MAX30001_BIOZ
 K_THREAD_DEFINE(max30001_bioz_data_producer_thread, 1024, t_bioz_data_producer, NULL, NULL, NULL, 2, 0, 0);
-K_THREAD_DEFINE(max30001_flash_thread, 4096, t_data_flasher, NULL, NULL, NULL, 2, 0, 0);
+K_THREAD_DEFINE(max30001_bioz_flash_thread, 4096*4, t_max30001_bioz_flasher, NULL, NULL, NULL, 2, 0, 0);
+K_THREAD_DEFINE(max30001_bioz_download_thread, 4096, t_download_bioz_thread, NULL, NULL, NULL, 3, 0, 0);
+#endif
+
 
 
 #endif

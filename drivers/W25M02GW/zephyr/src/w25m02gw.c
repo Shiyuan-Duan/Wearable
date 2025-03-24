@@ -469,6 +469,23 @@ static int init_w25m02gw(const struct device *dev)
         printk("Status Register %d: 0x%02x\n", i, status_reg[i]);
     }   
 
+    // test driver by setting first page to 0x07
+    // uint8_t test_data[2048];
+    // for(int i = 0; i < 2048; i++)
+    // {
+    //     test_data[i] = 0x07;
+    // }
+    // err = _w25m02gw_write(dev, 0, 0, test_data, 2048);
+
+    // readout
+    // uint8_t read_data[2048];
+    // err = _w25m02gw_read(dev, 40, 0, 0, read_data, 2048);
+    // for(int i = 0; i < 2048; i++)
+    // {
+    //     printk("Read Data[%d]: 0x%02x\n", i, read_data[i]);
+    //     k_msleep(10);
+    // }
+    
 
     return err;
 

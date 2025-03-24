@@ -576,7 +576,7 @@ static int _read_bfifo(const struct device *dev, uint8_t *data, ssize_t size)
     struct max30001_data *dev_data = dev->data;
     // _read_status(dev, dev_data->status);
     LOG_INF("Reading BIOZ FIFO\n");
-    k_sem_take(&dev_data->intb_sem, K_FOREVER);
+    // k_sem_take(&dev_data->intb_sem, K_FOREVER);
 
     uint8_t tx_buf[1];
     tx_buf[0] = (0x22 << 1) | READ_BIT;

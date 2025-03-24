@@ -10,5 +10,8 @@
         "type_traits": "cpp",
         "utility": "cpp",
         "ble_sensor_control.h": "c"
+    },
+    "nrf-connect.debugging.bindings": {
+        "${workspaceFolder}/ecg_build": "Launch ecg_build"
     }
 }

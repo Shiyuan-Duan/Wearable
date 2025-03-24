@@ -19,6 +19,9 @@ int disk_write_die_pointer;
 int disk_write_block_pointer;
 int disk_write_page_pointer;
 int disk_write_offset;
+
+
+
 struct k_fifo ads1299_data_fifo;
 struct k_sem fifo_ready_sem;
 struct k_fifo ble_stream_fifo;
@@ -35,7 +38,7 @@ struct ads1299_fifo_data_item_t {
     void *fifo_reserved;
     uint8_t data[24];
 };
-
+void stream_buffer(uint8_t *data, int size, int channel);
 #endif /* ADS1299_DATA_HANDLER_H */
 #endif
 

@@ -48,7 +48,8 @@ static char _last_recording_name[32] = "NI_recording";
 static uint64_t _last_recording_start_time = 0;
 static uint32_t _last_recording_size = 0;
 
-static uint8_t _ads1299_data[240] = {0};
+// static uint8_t _ads1299_data[240] = {0};
+static uint32_t _sensor_block_to_download = 0;
 
 static size_t sensor_fifo_size = 0;
 
@@ -163,10 +164,23 @@ static ssize_t attr_cb_write_sensor_data_download_sw(struct bt_conn *conn, const
 	}else{
 		cb.sensor_data_download_cb(0);
 	}
+	printk("Sensor data download sw: %d\n", value);
 
 	return len;
 }
 
+static ssize_t attr_cb_write_block_to_download(struct bt_conn *conn, const struct bt_gatt_attr *attr, const void *buf, uint16_t len, uint16_t offset, uint8_t flags)
+{
+
+
+	uint32_t value = *((uint32_t *)buf);
+
+	_sensor_block_to_download = value;
+	printk("Block to download: %d\n", value);
+	cb.sensor_update_download_block_cb(value);
+
+	return len;
+}
 static ssize_t attr_cb_bt_write_reset(struct bt_conn *conn, const struct bt_gatt_attr *attr, const void *buf, uint16_t len, uint16_t offset, uint8_t flags)
 {
 	if (len != 1) {
@@ -234,10 +248,11 @@ static ssize_t attr_cb_read_last_recording_size(struct bt_conn *conn, const stru
 }
 
 static ssize_t attr_cb_read_data(struct bt_conn *conn, const struct bt_gatt_attr *attr, void *buf, uint16_t len, uint16_t offset) {
-	printk("Trying to call cb\n");
-	cb.sensor_read_data_cb(_ads1299_data);
-	printk("Triggered cb\n");
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, _ads1299_data, sizeof(_ads1299_data));
+	// printk("Trying to call cb\n");
+	// cb.sensor_read_data_cb(_ads1299_data);
+	// printk("Triggered cb\n");
+	return bt_gatt_attr_read(conn, attr, buf, len, offset, &_sensor_block_to_download, sizeof(_sensor_block_to_download));
+
 }
 
 static ssize_t attr_cb_read_fifo_size(struct bt_conn *conn, const struct bt_gatt_attr *attr, void *buf, uint16_t len, uint16_t offset) {
@@ -245,7 +260,10 @@ static ssize_t attr_cb_read_fifo_size(struct bt_conn *conn, const struct bt_gatt
 
 	return bt_gatt_attr_read(conn, attr, buf, len, offset, &fifo_size, sizeof(fifo_size));
 }
-
+static ssize_t attr_cb_retrieve_flash(struct bt_conn *conn, const struct bt_gatt_attr *attr, void *buf, uint16_t len, uint16_t offset) {
+	cb.retrieve_flash_cb();
+	return len;
+}
 // #endregion
 
 
@@ -315,8 +333,9 @@ BT_GATT_SERVICE_DEFINE(
 	BT_GATT_CHARACTERISTIC(BT_UUID_SENSOR_LAST_RECORDING_NAME, BT_GATT_CHRC_READ, BT_GATT_PERM_READ, attr_cb_read_last_recording_name, NULL, &_last_recording_name),
 	BT_GATT_CHARACTERISTIC(BT_UUID_SENSOR_LAST_RECORDING_START_TIME, BT_GATT_CHRC_READ, BT_GATT_PERM_READ, attr_cb_read_last_recording_start_time, NULL, &_last_recording_start_time),
 	BT_GATT_CHARACTERISTIC(BT_UUID_SENSOR_LAST_RECORDING_SIZE, BT_GATT_CHRC_READ, BT_GATT_PERM_READ, attr_cb_read_last_recording_size, NULL, &_last_recording_size),
-	BT_GATT_CHARACTERISTIC(BT_UUID_SENSOR_READ_DATA, BT_GATT_CHRC_READ, BT_GATT_PERM_READ, attr_cb_read_data, NULL, _ads1299_data),
+	BT_GATT_CHARACTERISTIC(BT_UUID_SENSOR_READ_DATA, BT_GATT_CHRC_READ|BT_GATT_CHRC_WRITE, BT_GATT_PERM_READ|BT_GATT_PERM_WRITE, attr_cb_read_data, attr_cb_write_block_to_download, &_sensor_block_to_download),
 	BT_GATT_CHARACTERISTIC(BT_UUID_SENSOR_FLASH_FIFO_SIZE, BT_GATT_CHRC_READ, BT_GATT_PERM_READ, attr_cb_read_fifo_size, NULL, &sensor_fifo_size),
+	BT_GATT_CHARACTERISTIC(BT_UUID_SENSOR_RETRIEVE_FLASH, BT_GATT_CHRC_WRITE, BT_GATT_PERM_WRITE, NULL, attr_cb_retrieve_flash, NULL),
 );
 
 
@@ -405,6 +424,7 @@ int stream_sensor_data(enum SensorType sensor_type, uint32_t *sensor_value, ssiz
 	}
 	
 	return bt_gatt_notify(NULL, attr, sensor_value, size);
+
 }
 
 int register_ble_cb(struct ble_sensor_ctrl_cb *callbacks){
@@ -413,6 +433,8 @@ int register_ble_cb(struct ble_sensor_ctrl_cb *callbacks){
 	cb.sensor_add_event_cb = callbacks->sensor_add_event_cb;
 	cb.sensor_read_data_cb = callbacks->sensor_read_data_cb;
 	cb.sensor_read_fifo_size_cb = callbacks->sensor_read_fifo_size_cb;
+	cb.retrieve_flash_cb = callbacks->retrieve_flash_cb;
+	cb.sensor_update_download_block_cb = callbacks->sensor_update_download_block_cb;
     return 0;
 };
 

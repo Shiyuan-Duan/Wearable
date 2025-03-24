@@ -10,3 +10,15 @@ config MAX30001_INIT_PRIORITY
 	default 90
 	help
 	  MAX30001 initialization priority.
+
+config MAX30001_ECG
+	bool "Enable ECG support"
+	depends on MAX30001
+	help
+	  Enable support for the ECG sensor.
+
+config MAX30001_BIOZ
+	bool "Enable BIOZ support"
+	depends on MAX30001
+	help
+	  Enable support for the BIOZ sensor.
